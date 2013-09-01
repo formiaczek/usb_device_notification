@@ -1,0 +1,14 @@
+
+
+# rule to build executable
+exe device_notification
+:
+    device_notif_impl.cpp
+    main.cpp
+:
+  <include>.
+  <link>static
+  <toolset>msvc:<linkflags>User32.lib 
+
+  <location>./
+;
