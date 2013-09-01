@@ -82,22 +82,16 @@ void DeviceNotificationImpl::create_msg_window()
         wx.lpfnWndProc = reinterpret_cast<WNDPROC>(_message_handler);
         wx.hInstance = reinterpret_cast<HINSTANCE>(GetModuleHandle(0));
         wx.style = CS_HREDRAW | CS_VREDRAW;
-        wx.cbClsExtra = 0;
-        wx.cbWndExtra = 0;
         wx.hInstance = GetModuleHandle(0);
-        wx.hIcon = NULL;
-        wx.hCursor = NULL;
         wx.hbrBackground = (HBRUSH)(COLOR_WINDOW);
-        wx.lpszMenuName = NULL;
         wx.lpszClassName = class_name;
-        wx.hIconSm = NULL;
 
         if (RegisterClassEx(&wx))
         {
 
             hwnd = CreateWindow(class_name, "NotifMsgWindow", WS_ICONIC, 0, 0,
-                    CW_USEDEFAULT, 0, HWND_MESSAGE, NULL,
-                    GetModuleHandle(0), this);
+                                CW_USEDEFAULT, 0, HWND_MESSAGE, NULL,
+                                GetModuleHandle(0), this);
             if(hwnd == NULL || dev_notif == NULL)
             {
                 throw std::runtime_error("DeviceNotificationImpl::Init() error: Could not create");

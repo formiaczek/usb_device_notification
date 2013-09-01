@@ -59,11 +59,13 @@ public:
         impl->run_from_thread_never_returns();
     }
 
+    // override below method to implement you own handler.
     virtual void device_arrived(const std::string& device_path, void* lparam)
     {
         std::cout << "device arrived: " <<  device_path << "\n";
     }
 
+    // override below method to implement your own handler.
     virtual void device_removed(const std::string& device_path, void* lparam)
     {
         std::cout << "device removed: " <<  device_path << "\n";
