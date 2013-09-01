@@ -1,14 +1,36 @@
 
 
-# rule to build executable
-exe device_notification
-:
-    device_notif_impl.cpp
-    main.cpp
-:
-  <include>.
-  <link>static
-  <toolset>msvc:<linkflags>User32.lib 
+import os ;
 
-  <location>./
-;
+if [ os.name ] = NT
+{
+    exe device_notification
+    :
+        device_notif_impl.cpp
+        main.cpp
+    :
+      <include>.
+      <link>static
+      <toolset>msvc:<linkflags>User32.lib 
+      <define>USE_PTHREADS    
+      <location>./
+    ;
+}
+
+else
+{
+    exe device_notification
+    :
+        device_notif_impl.cpp
+        main.cpp
+    :
+      <include>.
+      <define>USE_PTHREADS
+      <link>static
+      <linkflags>-lusb
+      <linkflags>-ludev
+
+      <location>./
+    ;
+}
+

@@ -27,49 +27,105 @@
  * CONNECTION
  */
 
+
 #include <device_notification.h>
 #include <stdexcept>
 
-
+// common methods
 DeviceNotification::DeviceNotification()
 {
     impl = new DeviceNotificationImpl(this);
 }
 
+void DeviceNotificationImpl::cancel()
+{
+    wait_for_dev_changes = false;
+    IF_USING_PTHREADS(pthread_cancel(monitor_thread));
+    IF_USING_PTHREADS(pthread_join(monitor_thread, NULL));
+}
 
-#ifndef POSIX
+#ifdef USE_PTHREADS
+void* DeviceNotificationImpl::receive_thread(void* arg)
+{
+    DeviceNotificationImpl* self = (DeviceNotificationImpl*) arg;
+    if(self != NULL)
+    {
+        self->run_from_thread();
+    }
+    return (void*) NULL;
+}
+
+void DeviceNotificationImpl::start_thread()
+{
+    int ret = pthread_create(&monitor_thread,
+                             NULL,
+                             receive_thread,
+                             (void*) this);
+    if(ret)
+    {
+        throw std::runtime_error("creation of monitor thread failed!");
+    }
+}
+#endif /*USE_PTHREADS*/
+
+
+// OS specific implementation.
+#if defined(_WIN32) || defined(_WIN64)
 
 DeviceNotificationImpl::DeviceNotificationImpl(DeviceNotification* the_parent) :
     hwnd(NULL),
     dev_notif(NULL),
     class_name("DeviceNotificationImpl"),
-    parent(the_parent)
+    parent(the_parent),
+    wait_for_dev_changes(true)
 {
+    IF_USING_PTHREADS(monitor_thread = 0);
 }
 
 DeviceNotificationImpl::~DeviceNotificationImpl()
 {
+    cancel();
     destroy_msg_window();
 }
 
-void DeviceNotificationImpl::init(GUID interface_guid)
+void DeviceNotificationImpl::init(const std::string& dev_subsystem)
 {
-    guid = interface_guid;
+    cancel();
+    guid = translate_type(dev_subsystem);
     if(hwnd != NULL)
     {
         destroy_msg_window(); // remove the old one
     }
+    #ifdef USE_PTHREADS
+    start_thread();
+    #else // we need to create window from that other thread context..
     create_msg_window(); // create a new one..
+    #endif
 }
 
-void DeviceNotificationImpl::run_from_thread_never_returns()
+void DeviceNotificationImpl::run_from_thread()
 {
+    wait_for_dev_changes = true;
+    IF_USING_PTHREADS(create_msg_window()); // we need to create our msg window from the thread context..
     MSG msg;
     while( GetMessage( &msg, hwnd, 0, 0 ) )
     {
         TranslateMessage( &msg );
         DispatchMessage( &msg );
     }
+}
+
+const GUID usb_guid = {0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
+const GUID hid_guid = {0x4d1e55b2, 0xf16f, 0x11cf,{ 0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
+GUID DeviceNotificationImpl::translate_type(const std::string& dev_subsystem)
+{
+    GUID new_guid = usb_guid; // usb by default
+
+    if(dev_subsystem.size() >= 3 && dev_subsystem.substr(0,3)== "hid")
+    {
+        new_guid = hid_guid;
+    }
+    return new_guid;
 }
 
 void DeviceNotificationImpl::create_msg_window()
@@ -176,11 +232,116 @@ LRESULT DeviceNotificationImpl::_message_handler(HWND__* hwnd, UINT message, WPA
     return ret;
 }
 
-#else /* WINDOWS*/
+#else /* (not WINDOWS) */
+
+DeviceNotificationImpl::DeviceNotificationImpl(DeviceNotification* the_parent) :
+    dev_udev(NULL),
+    dev_mon(NULL),
+    parent(the_parent),
+    wait_for_dev_changes(true)
+{
+    IF_USING_PTHREADS(monitor_thread = 0);
+}
+
+DeviceNotificationImpl::~DeviceNotificationImpl()
+{
+    cancel();
+    release_device_monitor();
+}
+
+void DeviceNotificationImpl::init(const std::string& dev_subsystem)
+{
+    cancel();
+    if(dev_udev || dev_mon)
+    {
+        release_device_monitor();
+    }
+    init_device_monitor(dev_subsystem);
+    wait_for_dev_changes = true;
+}
+
+void DeviceNotificationImpl::init_device_monitor(const std::string& dev_subsystem)
+{
+    dev_udev = udev_new();
+    if(dev_udev != NULL)
+    {
+        dev_mon = udev_monitor_new_from_netlink(dev_udev, "udev");
+        if(dev_mon != NULL)
+        {
+            udev_monitor_filter_add_match_subsystem_devtype(dev_mon,
+                                                            dev_subsystem.c_str(),
+                                                            NULL);
+            udev_monitor_enable_receiving(dev_mon);
+            IF_USING_PTHREADS(start_thread());
+            return; // no error: return.
+        }
+    }
+    throw std::runtime_error("DeviceNotificationImpl::Init() error: Could not create");
+}
 
 
-#endif
+void DeviceNotificationImpl::release_device_monitor()
+{
+    if(dev_mon != NULL)
+    {
+        udev_monitor_filter_remove(dev_mon);
+        udev_monitor_unref(dev_mon);
+        dev_mon = NULL;
+    }
 
+    if(dev_udev != NULL)
+    {
+        udev_unref(dev_udev);
+        dev_udev = NULL;
+    }
+}
 
+void DeviceNotificationImpl::run_from_thread()
+{
+    int fd = udev_monitor_get_fd(dev_mon);
+    while (wait_for_dev_changes)
+    {
+        fd_set fds;
+        struct timeval tv;
+        int ret;
+
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        tv.tv_sec = 0;
+        tv.tv_usec = 250 * 1000; // 250ms
+        ret = select(fd+1, &fds, NULL, NULL, &tv);
+
+        if (ret > 0 && FD_ISSET(fd, &fds))
+        {
+            struct udev_device* dev;
+            dev = udev_monitor_receive_device(dev_mon);
+            if (dev)
+            {
+                std::string path("/sys");
+                const char* p = udev_device_get_devpath(dev);
+                if(p)
+                {
+                    path += p;
+                    const char* a = udev_device_get_action(dev);
+                    if(a)
+                    {
+                        std::string action(a);
+                        if(action == "add")
+                        {
+                            parent->device_arrived(path, (void*)dev);
+                        }
+                        else // (action == "remove")
+                        {
+                            parent->device_removed(path, (void*)dev);
+                        }
+                    }
+                }
+                udev_device_unref(dev);
+            }
+        }
+    }
+}
+
+#endif /* (not WINDOWS) */
 
 

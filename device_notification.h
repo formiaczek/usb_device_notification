@@ -31,12 +31,20 @@
 #ifndef DEVICE_NOTIFICATION_H_
 #define DEVICE_NOTIFICATION_H_
 
+// you can use PTHREADs if you wish to run the monitor
+// in the context of pthread. Otherwise, if you won't define
+// it - call 'run_from_thread()' method from your own thread.
+#ifdef USE_PTHREADS
+#define IF_USING_PTHREADS(x) x
+#else
+#define IF_USING_PTHREADS(x)
+#endif /*USE_PTHREADS*/
+
+
 #include <device_notif_impl.h>
 
 #include <string>
 #include <iostream>
-
-
 
 class DeviceNotification
 {
@@ -44,9 +52,9 @@ public:
 
     DeviceNotification();
 
-    void init(GUID interface_guid)
+    void init(const std::string& dev_subsystem)
     {
-        impl->init(interface_guid);
+        impl->init(dev_subsystem);
     }
 
     virtual ~DeviceNotification()
@@ -54,10 +62,12 @@ public:
         delete impl;
     }
 
-    void run_from_thread_never_returns()
+#ifndef USE_PTHREADS
+    void run_from_thread()
     {
-        impl->run_from_thread_never_returns();
+        impl->run_from_thread();
     }
+#endif
 
     // override below method to implement you own handler.
     virtual void device_arrived(const std::string& device_path, void* lparam)

@@ -32,10 +32,12 @@
 #define DEVICE_NOTIF_IMPL_H_
 
 #include <device_notification.h>
-#include <string.h>
+#include <string>
 
+class DeviceNotification;
 
-#ifndef POSIX
+#if defined(_WIN32) || defined(_WIN64)
+
 #ifndef ANSI
 #define ANSI
 #endif /*!ANSI*/
@@ -56,20 +58,24 @@ extern "C"
     #include<SetupAPI.h>
 }
 
-class DeviceNotification;
-
 class DeviceNotificationImpl
 {
 public:
     DeviceNotificationImpl(DeviceNotification* the_parent);
     ~DeviceNotificationImpl();
-    void init(GUID interface_guid);
-    void run_from_thread_never_returns();
+    void init(const std::string& dev_subsystem);
+    void run_from_thread();
 
 private:
+    void cancel();
+    GUID translate_type(const std::string& dev_subsystem);
     void create_msg_window();
     void destroy_msg_window();
     static LRESULT _message_handler(HWND__* hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+    #ifdef USE_PTHREADS
+    static void* receive_thread(void* arg);
+    void start_thread();
+    #endif /*USE_PTHREADS*/
 
 private:
     HWND hwnd;
@@ -77,23 +83,41 @@ private:
     GUID guid;
     const char* class_name;
     DeviceNotification* parent;
+    bool wait_for_dev_changes;
+    IF_USING_PTHREADS(pthread_t monitor_thread);
 };
 
+#else /*(not WINDOWS)*/
 
-#else
+#include <libudev.h>
+#include <locale.h>
+#include <unistd.h>
+
 
 class DeviceNotificationImpl
 {
 public:
     DeviceNotificationImpl(DeviceNotification* the_parent);
-    void init(int interface_guid);
     ~DeviceNotificationImpl();
-    void run_from_thread_never_returns();
+    void init(const std::string& dev_subsystem);
+    void run_from_thread();
 
 private:
-    DeviceNotification* parent;
-};
-#endif
+    void cancel();
+    void init_device_monitor(const std::string& dev_subsystem);
+    void release_device_monitor();
+    #ifdef USE_PTHREADS
+    static void* receive_thread(void* arg);
+    void start_thread();
+    #endif /*USE_PTHREADS*/
 
+    udev *dev_udev;
+    udev_monitor* dev_mon;
+    DeviceNotification* parent;
+    bool wait_for_dev_changes;
+    IF_USING_PTHREADS(pthread_t monitor_thread);
+};
+
+#endif /* !WINxxx s*/
 
 #endif /* DEVICE_NOTIF_IMPL_H_ */

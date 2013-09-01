@@ -2,18 +2,16 @@
  * @file    main.cpp
  * @date    1 Sep 2013
  * @author  lukasz.forynski
- * @brief   TODO
+ * @brief   simple example on how to use monitor.
  */
 
 
+// you can use PTHREADs if you wish to run the monitor
+// in the context of pthread. Define USE_PTHREADS for the project.
+// Otherwise, if you won't define
+// it - call 'run_from_thread()' method from your own thread.
+
 #include <device_notification.h>
-
-const GUID guid_hid_device = {0x4d1e55b2, 0xf16f, 0x11cf,{ 0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
-const GUID guid_usb_device = {0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
-
-
-
-// simple example on how to use it
 
 
 class MyDeviceNotif : public DeviceNotification
@@ -38,11 +36,23 @@ public:
 int main(int argc, char **argv)
 {
     MyDeviceNotif notif;
-    notif.init(guid_usb_device);
 
-    std::cout << " waiting for new USB devices.. \n";
+    // note, that on unix systems you need to define your udev rules to allow notifications for
+    // your device. For below example, create file like: /etc/udev/rules.d/99-hid.rules and add line:
+    // and add line: "KERNEL=="hidraw*", MODE="0666" (if you don't have it already)
+    notif.init("hidraw");
 
-    notif.run_from_thread_never_returns();
+    std::cout << " waiting for new HID devices.. \n";
+
+    #ifndef USE_PTHREADS
+    notif.run_from_thread();
+    #endif
+
+
+    while(true)
+    {
+        // ...
+    }
 
     return 0;
 }
