@@ -6,4 +6,4 @@ bin/*
 *.manifest
 *.rsp
 *.pdb
-
+device_notification

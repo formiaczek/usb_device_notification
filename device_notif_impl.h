@@ -31,13 +31,24 @@
 #ifndef DEVICE_NOTIF_IMPL_H_
 #define DEVICE_NOTIF_IMPL_H_
 
-#include <device_notification.h>
+class DeviceNotification;
 #include <string>
 
-class DeviceNotification;
+// you can use PTHREADs if you wish to run the monitor
+// in the context of pthread. Otherwise, if you won't define
+// it - call 'run_from_thread()' method from your own thread.
+#ifdef USE_PTHREADS
+#include <pthread.h>
+#define IF_USING_PTHREADS(x) x
+#define INITIALISATION_TIMEOUT_MS 50
+#else
+#define IF_USING_PTHREADS(x)
+#endif /*USE_PTHREADS*/
 
 #if defined(_WIN32) || defined(_WIN64)
-
+#ifdef UNICODE
+#undef UNICODE
+#endif /*UNICODE*/
 #ifndef ANSI
 #define ANSI
 #endif /*!ANSI*/
@@ -47,6 +58,7 @@ class DeviceNotification;
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0501
 #endif /*!_WIN32_WINNT*/
+
 
 #include <windows.h>
 #include <winuser.h>
@@ -73,7 +85,7 @@ private:
     void destroy_msg_window();
     static LRESULT _message_handler(HWND__* hwnd, UINT message, WPARAM wparam, LPARAM lparam);
     #ifdef USE_PTHREADS
-    static void* receive_thread(void* arg);
+    static void* monitor_thread_fcn(void* arg);
     void start_thread();
     #endif /*USE_PTHREADS*/
 
@@ -83,7 +95,8 @@ private:
     GUID guid;
     const char* class_name;
     DeviceNotification* parent;
-    bool wait_for_dev_changes;
+    volatile bool wait_for_dev_changes;
+    volatile bool initialised;
     IF_USING_PTHREADS(pthread_t monitor_thread);
 };
 
@@ -107,17 +120,20 @@ private:
     void init_device_monitor(const std::string& dev_subsystem);
     void release_device_monitor();
     #ifdef USE_PTHREADS
-    static void* receive_thread(void* arg);
+    static void* monitor_thread_fcn(void* arg);
     void start_thread();
     #endif /*USE_PTHREADS*/
 
     udev *dev_udev;
     udev_monitor* dev_mon;
     DeviceNotification* parent;
-    bool wait_for_dev_changes;
+    volatile bool wait_for_dev_changes;
     IF_USING_PTHREADS(pthread_t monitor_thread);
 };
 
 #endif /* !WINxxx s*/
+
+#include <device_notification.h>
+
 
 #endif /* DEVICE_NOTIF_IMPL_H_ */
