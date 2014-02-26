@@ -355,6 +355,12 @@ void DeviceNotificationImpl::run_from_thread()
                     const char* a = udev_device_get_action(dev);
                     if(a)
                     {
+                        // get parent device to allow clients to get USB dev info.
+                        dev = udev_device_get_parent_with_subsystem_devtype(
+                               dev,
+                               "usb",
+                               "usb_device");
+
                         std::string action(a);
                         if(action == "add")
                         {
