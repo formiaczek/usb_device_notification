@@ -346,8 +346,9 @@ void DeviceNotificationImpl::run_from_thread()
             dev = udev_monitor_receive_device(dev_mon);
             if (dev)
             {
-                std::string path("/sys");
-                const char* p = udev_device_get_devpath(dev);
+                std::string path( udev_get_dev_path(dev_udev));
+                path += "/";
+                const char* p = udev_device_get_sysname(dev);
                 if(p)
                 {
                     path += p;
