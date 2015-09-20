@@ -28,43 +28,74 @@
  */
 
 #include <device_notification.h>
+#include <string>
 #include <stdexcept>
 
-// common methods
-DeviceNotification::DeviceNotification()
-{
-    impl = new DeviceNotificationImpl(this);
-}
 
+// you can use PTHREADs if you wish to run the monitor
+// in the context of pthread. Otherwise, if you won't define
+// it - call 'run_from_thread()' method from your own thread.
 #ifdef USE_PTHREADS
-void* DeviceNotificationImpl::monitor_thread_fcn(void* arg)
-{
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-    DeviceNotificationImpl* self = (DeviceNotificationImpl*) arg;
-    if(self != NULL)
-    {
-        self->run_from_thread();
-    }
-    return (void*) NULL;
-}
-
-void DeviceNotificationImpl::start_thread()
-{
-    int ret = pthread_create(&monitor_thread,
-                             NULL,
-                             monitor_thread_fcn,
-                             (void*) this);
-    if(ret)
-    {
-        throw std::runtime_error("creation of monitor thread failed!");
-    }
-}
+#include <pthread.h>
+#define IF_USING_PTHREADS(x) x
+#define INITIALISATION_TIMEOUT_MS 50
+#else
+#define IF_USING_PTHREADS(x)
 #endif /*USE_PTHREADS*/
 
-
-// OS specific implementation.
 #if defined(_WIN32) || defined(_WIN64)
+#ifdef UNICODE
+#undef UNICODE
+#endif /*UNICODE*/
+#ifndef ANSI
+#define ANSI
+#endif /*!ANSI*/
+#ifndef WIN32_LEAN_AND_MEAN
+#define AWIN32_LEAN_AND_MEANNSI
+#endif /*!WIN32_LEAN_AND_MEAN*/
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0501
+#endif /*!_WIN32_WINNT*/
+
+#include <windows.h>
+#include <winuser.h>
+#include <Dbt.h>
+#include <guiddef.h>
+
+extern "C"
+{
+    #include<SetupAPI.h>
+}
+
+class DeviceNotification::DeviceNotificationImpl
+{
+public:
+    DeviceNotificationImpl(DeviceNotification* the_parent);
+    ~DeviceNotificationImpl();
+    void init(const std::string& dev_subsystem);
+    void run_from_thread();
+
+private:
+    void cancel();
+    GUID translate_type(const std::string& dev_subsystem);
+    void create_msg_window();
+    void destroy_msg_window();
+    static LRESULT _message_handler(HWND__* hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+    #ifdef USE_PTHREADS
+    static void* monitor_thread_fcn(void* arg);
+    void start_thread();
+    #endif /*USE_PTHREADS*/
+
+private:
+    HWND hwnd;
+    HDEVNOTIFY dev_notif;
+    GUID guid;
+    const char* class_name;
+    DeviceNotification* parent;
+    volatile bool wait_for_dev_changes;
+    volatile bool initialised;
+    IF_USING_PTHREADS(pthread_t monitor_thread);
+};
 
 DeviceNotificationImpl::DeviceNotificationImpl(DeviceNotification* the_parent) :
     hwnd(NULL),
@@ -82,7 +113,7 @@ DeviceNotificationImpl::~DeviceNotificationImpl()
     cancel();
 }
 
-void DeviceNotificationImpl::cancel()
+void DeviceNotification:: DeviceNotification::DeviceNotificationImpl::cancel()
 {
     if(initialised && wait_for_dev_changes)
     {
@@ -95,7 +126,7 @@ void DeviceNotificationImpl::cancel()
     }
 }
 
-void DeviceNotificationImpl::init(const std::string& dev_subsystem)
+void DeviceNotification::DeviceNotificationImpl::init(const std::string& dev_subsystem)
 {
     cancel();
     guid = translate_type(dev_subsystem);
@@ -118,7 +149,7 @@ void DeviceNotificationImpl::init(const std::string& dev_subsystem)
     }
 }
 
-void DeviceNotificationImpl::run_from_thread()
+void DeviceNotification::DeviceNotificationImpl::run_from_thread()
 {
     IF_USING_PTHREADS(create_msg_window()); // we need to create our msg window from the thread context..
     MSG msg;
@@ -131,7 +162,7 @@ void DeviceNotificationImpl::run_from_thread()
 
 const GUID usb_guid = {0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
 const GUID hid_guid = {0x4d1e55b2, 0xf16f, 0x11cf,{ 0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
-GUID DeviceNotificationImpl::translate_type(const std::string& dev_subsystem)
+GUID DeviceNotification::DeviceNotificationImpl::translate_type(const std::string& dev_subsystem)
 {
     GUID new_guid = usb_guid; // usb by default
     if(dev_subsystem.size() >= 3 && dev_subsystem.substr(0,3)== "hid")
@@ -141,7 +172,7 @@ GUID DeviceNotificationImpl::translate_type(const std::string& dev_subsystem)
     return new_guid;
 }
 
-void DeviceNotificationImpl::create_msg_window()
+void DeviceNotification::DeviceNotificationImpl::create_msg_window()
 {
     WNDCLASSEX wx;
     ZeroMemory(&wx, sizeof(wx));
@@ -167,7 +198,7 @@ void DeviceNotificationImpl::create_msg_window()
     }
 }
 
-void DeviceNotificationImpl::destroy_msg_window()
+void DeviceNotification::DeviceNotificationImpl::destroy_msg_window()
 {
     if (dev_notif != NULL)
     {
@@ -183,7 +214,7 @@ void DeviceNotificationImpl::destroy_msg_window()
     }
 }
 
-LRESULT DeviceNotificationImpl::_message_handler(HWND__* hwnd, UINT message, WPARAM wparam, LPARAM lparam)
+LRESULT DeviceNotification::DeviceNotificationImpl::_message_handler(HWND__* hwnd, UINT message, WPARAM wparam, LPARAM lparam)
 {
     LRESULT ret = 0L;
     static DeviceNotificationImpl* self = NULL;
@@ -252,7 +283,36 @@ LRESULT DeviceNotificationImpl::_message_handler(HWND__* hwnd, UINT message, WPA
 
 #else /* (not WINDOWS) */
 
-DeviceNotificationImpl::DeviceNotificationImpl(DeviceNotification* the_parent) :
+#include <libudev.h>
+#include <locale.h>
+#include <unistd.h>
+
+class DeviceNotification::DeviceNotificationImpl
+{
+public:
+    DeviceNotificationImpl(DeviceNotification* the_parent);
+    ~DeviceNotificationImpl();
+    void init(const std::string& dev_subsystem);
+    void run_from_thread();
+
+private:
+    void cancel();
+    void init_device_monitor(const std::string& dev_subsystem);
+    void release_device_monitor();
+    #ifdef USE_PTHREADS
+    static void* monitor_thread_fcn(void* arg);
+    void start_thread();
+    #endif /*USE_PTHREADS*/
+
+    udev *dev_udev;
+    udev_monitor* dev_mon;
+    DeviceNotification* parent;
+    volatile bool wait_for_dev_changes;
+    IF_USING_PTHREADS(pthread_t monitor_thread);
+};
+
+
+DeviceNotification::DeviceNotificationImpl::DeviceNotificationImpl(DeviceNotification* the_parent) :
     dev_udev(NULL),
     dev_mon(NULL),
     parent(the_parent),
@@ -261,13 +321,13 @@ DeviceNotificationImpl::DeviceNotificationImpl(DeviceNotification* the_parent) :
     IF_USING_PTHREADS(monitor_thread = 0);
 }
 
-DeviceNotificationImpl::~DeviceNotificationImpl()
+DeviceNotification::DeviceNotificationImpl::~DeviceNotificationImpl()
 {
     cancel();
     release_device_monitor();
 }
 
-void DeviceNotificationImpl::cancel()
+void DeviceNotification::DeviceNotificationImpl::cancel()
 {
     if(wait_for_dev_changes)
     {
@@ -278,7 +338,7 @@ void DeviceNotificationImpl::cancel()
 }
 
 
-void DeviceNotificationImpl::init(const std::string& dev_subsystem)
+void DeviceNotification::DeviceNotificationImpl::init(const std::string& dev_subsystem)
 {
     cancel();
     if(dev_udev || dev_mon)
@@ -289,7 +349,7 @@ void DeviceNotificationImpl::init(const std::string& dev_subsystem)
     wait_for_dev_changes = true;
 }
 
-void DeviceNotificationImpl::init_device_monitor(const std::string& dev_subsystem)
+void DeviceNotification::DeviceNotificationImpl::init_device_monitor(const std::string& dev_subsystem)
 {
     dev_udev = udev_new();
     if(dev_udev != NULL)
@@ -309,7 +369,7 @@ void DeviceNotificationImpl::init_device_monitor(const std::string& dev_subsyste
 }
 
 
-void DeviceNotificationImpl::release_device_monitor()
+void DeviceNotification::DeviceNotificationImpl::release_device_monitor()
 {
     if(dev_mon != NULL)
     {
@@ -325,7 +385,7 @@ void DeviceNotificationImpl::release_device_monitor()
     }
 }
 
-void DeviceNotificationImpl::run_from_thread()
+void DeviceNotification::DeviceNotificationImpl::run_from_thread()
 {
     int fd = udev_monitor_get_fd(dev_mon);
     while (wait_for_dev_changes)
@@ -346,7 +406,7 @@ void DeviceNotificationImpl::run_from_thread()
             dev = udev_monitor_receive_device(dev_mon);
             if (dev)
             {
-                std::string path( udev_get_dev_path(dev_udev));
+                std::string path; // TODO( udev_get_dev_path(dev_udev));
                 path += "/";
                 const char* p = udev_device_get_sysname(dev);
                 if(p)
@@ -380,4 +440,52 @@ void DeviceNotificationImpl::run_from_thread()
 
 #endif /* (not WINDOWS) */
 
+
+#ifdef USE_PTHREADS
+void* DeviceNotification::DeviceNotificationImpl::monitor_thread_fcn(void* arg)
+{
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    DeviceNotificationImpl* self = (DeviceNotificationImpl*) arg;
+    if(self != NULL)
+    {
+        self->run_from_thread();
+    }
+    return (void*) NULL;
+}
+
+void DeviceNotification::DeviceNotificationImpl::start_thread()
+{
+    int ret = pthread_create(&monitor_thread,
+                             NULL,
+                             monitor_thread_fcn,
+                             (void*) this);
+    if(ret)
+    {
+        throw std::runtime_error("creation of monitor thread failed!");
+    }
+}
+
+#else
+
+void DeviceNotification::run_from_thread()
+{
+    impl->run_from_thread();
+}
+#endif /*USE_PTHREADS*/
+
+DeviceNotification::DeviceNotification() :
+    impl (new DeviceNotificationImpl(this))
+{
+}
+
+DeviceNotification::~DeviceNotification()
+{
+    delete impl;
+}
+
+void DeviceNotification::init(const std::string& dev_subsystem)
+{
+    impl->init(dev_subsystem);
+}
 

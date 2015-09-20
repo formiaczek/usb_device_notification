@@ -33,29 +33,18 @@
 
 #include <string>
 #include <iostream>
-#include <device_notif_impl.h>
 
 class DeviceNotification
 {
 public:
 
     DeviceNotification();
+    virtual ~DeviceNotification();
 
-    void init(const std::string& dev_subsystem)
-    {
-        impl->init(dev_subsystem);
-    }
-
-    virtual ~DeviceNotification()
-    {
-        delete impl;
-    }
+    void init(const std::string& dev_subsystem);
 
 #ifndef USE_PTHREADS
-    void run_from_thread()
-    {
-        impl->run_from_thread();
-    }
+    void run_from_thread();
 #endif
 
     // override below method to implement you own handler.
@@ -69,6 +58,8 @@ public:
     {
         std::cout << "device removed: " <<  device_path << "\n";
     }
+
+    struct DeviceNotificationImpl;
 
 private:
     DeviceNotificationImpl* impl;

@@ -6,7 +6,7 @@ if [ os.name ] = NT
 {
     exe device_notification
     :
-        device_notif_impl.cpp
+        device_notification.cpp
         main.cpp
     :
       <include>.
@@ -21,7 +21,7 @@ else
 {
     exe device_notification
     :
-        device_notif_impl.cpp
+        device_notification.cpp
         main.cpp
     :
       <include>.
@@ -29,6 +29,7 @@ else
       <link>static
       <linkflags>-lusb
       <linkflags>-ludev
+      <linkflags>-lpthread
 
       <location>./
     ;
